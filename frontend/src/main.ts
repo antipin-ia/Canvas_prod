@@ -4,20 +4,20 @@ import { VersionHistory } from './components/VersionHistory';
 import { CanvasState, VersionInfo } from './types/canvas';
 
 class App {
-  private socketService: SocketService;
-  private canvas: Canvas;
-  private versionHistory: VersionHistory;
+  private socketService!: SocketService;
+  private canvas!: Canvas;
+  private versionHistory!: VersionHistory;
   private currentState: CanvasState = { squares: [], version: 0, lastEventId: '' };
   private selectedVersion: number | null = null;
 
   // DOM elements
-  private statusIndicator: HTMLElement;
-  private statusText: HTMLElement;
-  private currentVersionEl: HTMLElement;
-  private squaresCountEl: HTMLElement;
-  private lastEventIdEl: HTMLElement;
-  private refreshBtn: HTMLButtonElement;
-  private clearBtn: HTMLButtonElement;
+  private statusIndicator!: HTMLElement;
+  private statusText!: HTMLElement;
+  private currentVersionEl!: HTMLElement;
+  private squaresCountEl!: HTMLElement;
+  private lastEventIdEl!: HTMLElement;
+  private refreshBtn!: HTMLButtonElement;
+  private clearBtn!: HTMLButtonElement;
 
   constructor() {
     this.socketService = new SocketService();

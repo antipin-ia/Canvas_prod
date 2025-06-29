@@ -1,15 +1,21 @@
 import { Entity, PrimaryColumn, Column, CreateDateColumn } from 'typeorm';
 
-@Entity('snapshots')
-export class Snapshot {
+@Entity('events')
+export class Event {
   @PrimaryColumn()
+  id: string;
+
+  @Column()
+  type: string;
+
+  @Column()
   aggregateId: string;
 
-  @PrimaryColumn()
+  @Column()
   version: number;
 
   @Column('json')
-  state: any;
+  data: any;
 
   @CreateDateColumn()
   timestamp: Date;

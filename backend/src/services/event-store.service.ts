@@ -1,13 +1,30 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { CanvasEvent, CanvasState, Square } from '../types/events';
+import { Event } from '../entities/event.entity';
+import { Snapshot } from '../entities/snapshot.entity';
 
 @Injectable()
 export class EventStoreService {
-  private events: CanvasEvent[] = [];
-  private snapshots: Map<string, any> = new Map();
+  constructor(
+    @InjectRepository(Event)
+    private eventRepository: Repository<Event>,
+    @InjectRepository(Snapshot)
+    private snapshotRepository: Repository<Snapshot>,
+  ) {}
 
   async saveEvent(event: CanvasEvent): Promise<void> {
-    this.events.push(event);
+    const eventEntity = this.eventRepository.create({
+      id: event.id,
+      type: event.type,
+      aggregateId: event.aggregateId,
+      version: event.version,
+      data: event.data,
+      timestamp: event.timestamp,
+    });
+
+    await this.eventRepository.save(eventEntity);
 
     if (event.version % 10 === 0) {
       await this.createSnapshot(event.aggregateId, event.version);
@@ -15,60 +32,97 @@ export class EventStoreService {
   }
 
   async getEvents(aggregateId: string, fromVersion?: number): Promise<CanvasEvent[]> {
-    let filteredEvents = this.events.filter(e => e.aggregateId === aggregateId);
-    
+    const queryBuilder = this.eventRepository
+      .createQueryBuilder('event')
+      .where('event.aggregateId = :aggregateId', { aggregateId })
+      .orderBy('event.version', 'ASC');
+
     if (fromVersion !== undefined) {
-      filteredEvents = filteredEvents.filter(e => e.version > fromVersion);
+      queryBuilder.andWhere('event.version > :fromVersion', { fromVersion });
     }
-    
-    return filteredEvents.sort((a, b) => a.version - b.version);
+
+    const events = await queryBuilder.getMany();
+    return events.map(event => ({
+      id: event.id,
+      type: event.type as any,
+      aggregateId: event.aggregateId,
+      version: event.version,
+      data: event.data,
+      timestamp: event.timestamp,
+    }));
   }
 
   async getEventsUpToVersion(aggregateId: string, version: number): Promise<CanvasEvent[]> {
-    return this.events
-      .filter(e => e.aggregateId === aggregateId && e.version <= version)
-      .sort((a, b) => a.version - b.version);
+    const events = await this.eventRepository
+      .createQueryBuilder('event')
+      .where('event.aggregateId = :aggregateId', { aggregateId })
+      .andWhere('event.version <= :version', { version })
+      .orderBy('event.version', 'ASC')
+      .getMany();
+
+    return events.map(event => ({
+      id: event.id,
+      type: event.type as any,
+      aggregateId: event.aggregateId,
+      version: event.version,
+      data: event.data,
+      timestamp: event.timestamp,
+    }));
   }
 
   async getLatestSnapshot(aggregateId: string): Promise<any> {
-    return this.snapshots.get(aggregateId) || null;
+    const snapshot = await this.snapshotRepository
+      .createQueryBuilder('snapshot')
+      .where('snapshot.aggregateId = :aggregateId', { aggregateId })
+      .orderBy('snapshot.version', 'DESC')
+      .getOne();
+
+    return snapshot;
   }
 
   async getAllVersions(aggregateId: string): Promise<{ id: string; timestamp: Date; version: number }[]> {
-    return this.events
-      .filter(e => e.aggregateId === aggregateId)
-      .map(event => ({
-        id: event.id,
-        timestamp: event.timestamp,
-        version: event.version,
-      }))
-      .sort((a, b) => a.version - b.version);
+    const events = await this.eventRepository
+      .createQueryBuilder('event')
+      .select(['event.id', 'event.timestamp', 'event.version'])
+      .where('event.aggregateId = :aggregateId', { aggregateId })
+      .orderBy('event.version', 'ASC')
+      .getMany();
+
+    return events.map(event => ({
+      id: event.id,
+      timestamp: event.timestamp,
+      version: event.version,
+    }));
   }
 
   private async createSnapshot(aggregateId: string, version: number): Promise<void> {
     const state = await this.getStateAtVersion(aggregateId, version);
-    this.snapshots.set(aggregateId, { version, state });
+    const snapshot = this.snapshotRepository.create({
+      aggregateId,
+      version,
+      state,
+    });
+    await this.snapshotRepository.save(snapshot);
   }
 
   async getStateAtVersion(aggregateId: string, version?: number): Promise<CanvasState> {
     let snapshot: any = null;
     
     if (version) {
-      const snapshots = Array.from(this.snapshots.entries())
-        .filter(([id, snap]) => id === aggregateId && snap.version <= version)
-        .sort((a, b) => b[1].version - a[1].version);
-      
-      if (snapshots.length > 0) {
-        snapshot = snapshots[0][1];
-      }
+      snapshot = await this.snapshotRepository
+        .createQueryBuilder('snapshot')
+        .where('snapshot.aggregateId = :aggregateId', { aggregateId })
+        .andWhere('snapshot.version <= :version', { version })
+        .orderBy('snapshot.version', 'DESC')
+        .getOne();
     } else {
-      snapshot = this.snapshots.get(aggregateId);
+      snapshot = await this.getLatestSnapshot(aggregateId);
     }
 
     let initialState: CanvasState = {
       squares: [],
       version: snapshot?.version || 0,
-      lastEventId: snapshot?.id || '',
+      lastEventId: '',
     };
 
     if (snapshot) {
@@ -84,13 +138,25 @@ export class EventStoreService {
     fromVersion: number, 
     toVersion?: number
   ): Promise<CanvasEvent[]> {
-    let events = this.events.filter(e => e.aggregateId === aggregateId && e.version > fromVersion);
-    
+    const queryBuilder = this.eventRepository
+      .createQueryBuilder('event')
+      .where('event.aggregateId = :aggregateId', { aggregateId })
+      .andWhere('event.version > :fromVersion', { fromVersion })
+      .orderBy('event.version', 'ASC');
+
     if (toVersion) {
-      events = events.filter(e => e.version <= toVersion);
+      queryBuilder.andWhere('event.version <= :toVersion', { toVersion });
     }
-    
-    return events.sort((a, b) => a.version - b.version);
+
+    const events = await queryBuilder.getMany();
+    return events.map(event => ({
+      id: event.id,
+      type: event.type as any,
+      aggregateId: event.aggregateId,
+      version: event.version,
+      data: event.data,
+      timestamp: event.timestamp,
+    }));
   }
 
   private applyEvents(state: CanvasState, events: CanvasEvent[]): CanvasState {

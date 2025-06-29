@@ -1,16 +1,58 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { EventStoreService } from './event-store.service';
+import { Event } from '../entities/event.entity';
+import { Snapshot } from '../entities/snapshot.entity';
 import { CanvasEvent, CanvasState } from '../types/events';
 
 describe('EventStoreService', () => {
   let service: EventStoreService;
+  let eventRepository: Repository<Event>;
+  let snapshotRepository: Repository<Snapshot>;
+
+  const mockEventRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    createQueryBuilder: jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      getMany: jest.fn(),
+      getOne: jest.fn(),
+    })),
+  };
+
+  const mockSnapshotRepository = {
+    create: jest.fn(),
+    save: jest.fn(),
+    createQueryBuilder: jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getOne: jest.fn(),
+    })),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [EventStoreService],
+      providers: [
+        EventStoreService,
+        {
+          provide: getRepositoryToken(Event),
+          useValue: mockEventRepository,
+        },
+        {
+          provide: getRepositoryToken(Snapshot),
+          useValue: mockSnapshotRepository,
+        },
+      ],
     }).compile();
 
     service = module.get<EventStoreService>(EventStoreService);
+    eventRepository = module.get<Repository<Event>>(getRepositoryToken(Event));
+    snapshotRepository = module.get<Repository<Snapshot>>(getRepositoryToken(Snapshot));
   });
 
   afterEach(() => {
@@ -38,11 +80,29 @@ describe('EventStoreService', () => {
         },
       };
 
+      const eventEntity = {
+        id: event.id,
+        type: event.type,
+        aggregateId: event.aggregateId,
+        version: event.version,
+        data: event.data,
+        timestamp: event.timestamp,
+      };
+
+      mockEventRepository.create.mockReturnValue(eventEntity);
+      mockEventRepository.save.mockResolvedValue(eventEntity);
+
       await service.saveEvent(event);
-      const state = await service.getStateAtVersion('canvas-1');
-      
-      expect(state.squares).toHaveLength(1);
-      expect(state.squares[0].id).toBe('square-1');
+
+      expect(mockEventRepository.create).toHaveBeenCalledWith({
+        id: event.id,
+        type: event.type,
+        aggregateId: event.aggregateId,
+        version: event.version,
+        data: event.data,
+        timestamp: event.timestamp,
+      });
+      expect(mockEventRepository.save).toHaveBeenCalledWith(eventEntity);
     });
 
     it('should create snapshot every 10 events', async () => {
@@ -61,16 +121,51 @@ describe('EventStoreService', () => {
         },
       };
 
+      const eventEntity = {
+        id: event.id,
+        type: event.type,
+        aggregateId: event.aggregateId,
+        version: event.version,
+        data: event.data,
+        timestamp: event.timestamp,
+      };
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+
+      mockEventRepository.create.mockReturnValue(eventEntity);
+      mockEventRepository.save.mockResolvedValue(eventEntity);
+      mockEventRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockSnapshotRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockSnapshotRepository.create.mockReturnValue({});
+      mockSnapshotRepository.save.mockResolvedValue({});
+
       await service.saveEvent(event);
-      const snapshot = await service.getLatestSnapshot('canvas-1');
-      
-      expect(snapshot).toBeTruthy();
-      expect(snapshot.version).toBe(10);
+
+      expect(mockEventRepository.save).toHaveBeenCalled();
+      expect(mockSnapshotRepository.create).toHaveBeenCalled();
+      expect(mockSnapshotRepository.save).toHaveBeenCalled();
     });
   });
 
   describe('getStateAtVersion', () => {
     it('should return initial state when no events exist', async () => {
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+
+      mockSnapshotRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockEventRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+
       const result = await service.getStateAtVersion('canvas-1');
 
       expect(result).toEqual({
@@ -84,8 +179,7 @@ describe('EventStoreService', () => {
       const events = [
         {
           id: 'event-1',
-          type: 'SquareCreated' as const,
-          timestamp: new Date(),
+          type: 'SquareCreated',
           aggregateId: 'canvas-1',
           version: 1,
           data: {
@@ -95,11 +189,11 @@ describe('EventStoreService', () => {
             size: 50,
             color: 'red',
           },
+          timestamp: new Date(),
         },
         {
           id: 'event-2',
-          type: 'SquareMoved' as const,
-          timestamp: new Date(),
+          type: 'SquareMoved',
           aggregateId: 'canvas-1',
           version: 2,
           data: {
@@ -107,12 +201,20 @@ describe('EventStoreService', () => {
             x: 200,
             y: 200,
           },
+          timestamp: new Date(),
         },
       ];
 
-      for (const event of events) {
-        await service.saveEvent(event);
-      }
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+        getMany: jest.fn().mockResolvedValue(events),
+      };
+
+      mockSnapshotRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
+      mockEventRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
       const result = await service.getStateAtVersion('canvas-1');
 
@@ -131,27 +233,24 @@ describe('EventStoreService', () => {
 
   describe('getAllVersions', () => {
     it('should return all versions for an aggregate', async () => {
-      const event: CanvasEvent = {
-        id: 'event-1',
-        type: 'SquareCreated',
-        timestamp: new Date(),
-        aggregateId: 'canvas-1',
-        version: 1,
-        data: {
-          squareId: 'square-1',
-          x: 100,
-          y: 100,
-          size: 50,
-          color: 'red',
-        },
+      const versions = [
+        { id: 'event-1', timestamp: new Date(), version: 1 },
+        { id: 'event-2', timestamp: new Date(), version: 2 },
+      ];
+
+      const mockQueryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue(versions),
       };
 
-      await service.saveEvent(event);
-      const versions = await service.getAllVersions('canvas-1');
+      mockEventRepository.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
-      expect(versions).toHaveLength(1);
-      expect(versions[0].id).toBe('event-1');
-      expect(versions[0].version).toBe(1);
+      const result = await service.getAllVersions('canvas-1');
+
+      expect(result).toEqual(versions);
     });
   });
 }); 

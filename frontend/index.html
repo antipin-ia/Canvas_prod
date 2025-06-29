@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canvas Event Sourcing</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Canvas Event Sourcing</h1>
+      <div class="connection-status" id="connectionStatus">
+        <span class="status-indicator" id="statusIndicator"></span>
+        <span class="status-text" id="statusText">Подключение...</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="canvas-container">
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <div class="canvas-info">
+          <p>Кликните на canvas для создания квадрата</p>
+          <p>Перетащите квадрат мышкой для перемещения</p>
+          <p>Правый клик для удаления квадрата</p>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <div class="version-panel" id="versionPanel">
+          <!-- Version history will be rendered here -->
+        </div>
+        
+        <div class="controls">
+          <h3>Управление</h3>
+          <button id="refreshBtn" class="btn">Обновить</button>
+          <button id="clearBtn" class="btn btn-danger">Очистить</button>
+        </div>
+
+        <div class="state-info">
+          <h3>Информация о состоянии</h3>
+          <div class="info-item">
+            <span class="label">Версия:</span>
+            <span class="value" id="currentVersion">0</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Квадратов:</span>
+            <span class="value" id="squaresCount">0</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Последнее событие:</span>
+            <span class="value" id="lastEventId">-</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="src/main.ts"></script>
+</body>
+</html> 
